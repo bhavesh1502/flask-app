@@ -22,8 +22,5 @@ phases:
       - printf '[{"name":"flask-container","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
       - envsubst task-definitio.json
       - echo Updating ECS service with new image...
-      - aws ecs update-service \
-        --cluster flask-app-cluster \
-        --service flask-task-definition-service \
-        --force-new-deployment \
-        --region ap-south-1
+      - aws ecs register-task-definition --family flask-task-definition --region $REGION --cli-input-json file://task-definition.json
+      - aws ecs update-service --cluster flask-app-cluster --service flask-task-definition-service --region $REGION --task-definition $TASK_DEFINITION_NAME
