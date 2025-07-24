@@ -20,7 +20,8 @@ phases:
       - docker push $REPOSITORY_URI:$IMAGE_TAG
       - echo Writing image definitions file...
       - printf '[{"name":"flask-container","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
-      - envsubst task-definitio.json
+      - envsubst task-definition.json
+      - cat task-definition.json
       - echo Updating ECS service with new image...
-      - aws ecs register-task-definition --family flask-task-definition --region $REGION --cli-input-json file://task-definition.json
+      - aws ecs register-task-definition --family flask-task-definition --region $AWS_DEFAULT_REGION --cli-input-json file://task-definition.json
       - aws ecs update-service --cluster flask-app-cluster --service flask-task-definition-service --region $AWS_DEFAULT_REGION --task-definition $TASK_DEFINITION_NAME
