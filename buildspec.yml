@@ -23,4 +23,4 @@ phases:
       - envsubst task-definitio.json
       - echo Updating ECS service with new image...
       - aws ecs register-task-definition --family flask-task-definition --region $REGION --cli-input-json file://task-definition.json
-      - aws ecs update-service --cluster flask-app-cluster --service flask-task-definition-service --region $AWS_DEFAULT_REGION --task-definition $TASK_DEFINITION_NAME
+      - aws ecs update-service --cluster flask-app-cluster --service flask-task-definition-service --region ap-south-1 --task-definition $TASK_DEFINITION_NAME
