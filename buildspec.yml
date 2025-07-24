@@ -8,7 +8,6 @@ phases:
       - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
-      - echo "Using image tag: $IMAGE_TAG"
 
   build:
     commands:
@@ -19,29 +18,9 @@ phases:
     commands:
       - echo Pushing the Docker image to ECR...
       - docker push $REPOSITORY_URI:$IMAGE_TAG
-
-      - echo Writing imagedefinitions.json (optional)...
+      - echo Writing image definitions file...
       - printf '[{"name":"flask-container","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
-
-      - echo Replacing image tag in ECS task definition...
-      - sed -i "s|\$IMAGE_TAG|$IMAGE_TAG|g" task-definition.json
-
-      - echo Registering new ECS task definition revision...
-      - aws ecs register-task-definition \
-          --cli-input-json file://task-definition.json \
-          --region $AWS_DEFAULT_REGION
-
-      - echo Updating ECS service...
-      - LATEST_REVISION=$(aws ecs describe-task-definition \
-          --task-definition $TASK_DEFINITION_NAME \
-          --region $AWS_DEFAULT_REGION \
-          --query "taskDefinition.revision" --output text)
-
-      - aws ecs update-service \
-          --cluster $CLUSTER_NAME \
-          --service $SERVICE_NAME \
-          --task-definition $TASK_DEFINITION_NAME:$LATEST_REVISION \
-          --force-new-deployment \
-          --region $AWS_DEFAULT_REGION
-
-      - echo "✅ ECS service updated successfully."
+      - envsubst task-definitio.json
+      - echo Updating ECS service with new image...
+      - aws ecs register-task-definition --family flask-task-definition --region $REGION --cli-input-json file://task-definition.json
+      - aws ecs update-service --cluster flask-app-cluster --service flask-task-definition-service --region $AWS_DEFAULT_REGION --task-definition $TASK_DEFINITION_NAME
