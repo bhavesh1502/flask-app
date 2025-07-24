@@ -23,7 +23,7 @@ phases:
       - envsubst task-definitio.json
       - echo Updating ECS service with new image...
       - aws ecs update-service \
-        --cluster flask-cluster \
-        --service flask-service \
+        --cluster flask-app-cluster \
+        --service flask-task-definition-service \
         --force-new-deployment \
         --region ap-south-1
