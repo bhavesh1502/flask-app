@@ -2,8 +2,8 @@ version: 0.2
 
 env:
   variables:
-    AWS_REGION: ap-south-1               # Your AWS region
-    ECR_REPO_NAME: flask-app             # Your ECR repository name
+    AWS_REGION: ap-south-1              
+    ECR_REPO_NAME: flask-app            
 
 phases:
   pre_build:
