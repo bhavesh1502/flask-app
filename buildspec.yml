@@ -25,36 +25,31 @@ phases:
       - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_URI
 
   post_build:
-    commands:
-      - echo "Pushing Docker image to ECR..."
-      - docker push $IMAGE_URI
-      
-      - echo "Fetching current ECS task definition..."
-      - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
+  commands:
+    - echo "Pushing Docker image to ECR..."
+    - docker push $IMAGE_URI
 
-      - echo "Updating container image in task definition..."
-      - cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
-          .taskDefinition.containerDefinitions[0].image = $IMAGE
-          | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities, .taskDefinition.registeredAt, .taskDefinition.registeredBy)
-          | .taskDefinition
-        ' > new-task-def.json
+    - echo "Fetching current ECS task definition..."
+    - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
 
-      - echo "Registering new ECS task definition revision..."
-      - REGISTER_OUTPUT=$(aws ecs register-task-definition \
-          --cli-input-json file://new-task-def.json \
-          --region $AWS_DEFAULT_REGION)
-      - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
-      - echo "New ECS task definition revision is $NEW_REVISION"
+    - echo "Updating container image in task definition..."
+    - |
+      cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
+        .taskDefinition.containerDefinitions[0].image = $IMAGE
+        | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities, .taskDefinition.registeredAt, .taskDefinition.registeredBy)
+        | .taskDefinition
+      ' > new-task-def.json
 
-      - echo "Updating ECS service with new task definition..."
-      - aws ecs update-service \
-          --cluster $CLUSTER_NAME \
-          --service $SERVICE_NAME \
-          --task-definition $TASK_DEFINITION_NAME:$NEW_REVISION \
-          --force-new-deployment \
-          --region $AWS_DEFAULT_REGION
+    - echo "Registering new ECS task definition revision..."
+    - REGISTER_OUTPUT=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --region $AWS_DEFAULT_REGION)
+    - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
+    - echo "New ECS task definition revision is $NEW_REVISION"
 
-      - echo "Deployment complete!"
+    - echo "Updating ECS service with new task definition..."
+    - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --task-definition $TASK_DEFINITION_NAME:$NEW_REVISION --force-new-deployment --region $AWS_DEFAULT_REGION
+
+    - echo "Deployment complete!"
+
 
 cache:
   paths: []
