@@ -30,9 +30,8 @@ phases:
       - docker push $IMAGE_URI
       - echo Fetching the latest ECS task definition for family: $TASK_DEFINITION_NAME...
       - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
-      - echo Updating container image in task definition JSON...
-      - |
-        CONTAINER_NAME=${CONTAINER_NAME:-your-container-name}
+      - >
+        CONTAINER_NAME=${CONTAINER_NAME:-your-container-name} &&
         cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" '
           .taskDefinition.containerDefinitions |= map(
             if .name == $NAME then .image = $IMAGE else . end
