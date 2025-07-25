@@ -30,8 +30,7 @@ phases:
       - docker push $IMAGE_URI
       
       - echo "Fetching current ECS task definition..."
-      - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME \
-        --region $AWS_DEFAULT_REGION > current-task-def.json
+      - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
 
       - echo "Updating container image in task definition..."
       - cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
