@@ -1,6 +1,11 @@
 version: 0.2
 
 phases:
+  install:
+    commands:
+      - echo Installing jq for JSON processing...
+      - yum install -y jq
+
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
@@ -8,28 +13,44 @@ phases:
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
       - echo IMAGE_TAG=$IMAGE_TAG
+      - echo IMAGE_URI=$IMAGE_URI
 
   build:
     commands:
       - echo Building Docker image...
       - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
-      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
+      - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_URI
 
   post_build:
     commands:
       - echo Pushing Docker image to ECR...
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-      - echo Updating ECS service...
-      - |
-        aws ecs update-service \
+      - docker push $IMAGE_URI
+
+      - echo Fetching current ECS task definition JSON...
+      - TASK_DEF_JSON=$(aws ecs describe-task-definition --task-definition $TASK_FAMILY --region $AWS_DEFAULT_REGION | jq '.taskDefinition')
+
+      - echo Updating container image in task definition...
+      - UPDATED_TASK_DEF=$(echo $TASK_DEF_JSON | jq --arg IMAGE "$IMAGE_URI" '
+          .containerDefinitions[0].image = $IMAGE |
+          del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities)
+        ')
+
+      - echo Registering new task definition revision...
+      - REGISTER_OUTPUT=$(aws ecs register-task-definition --cli-input-json "$UPDATED_TASK_DEF" --region $AWS_DEFAULT_REGION)
+      - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
+      - echo New task definition revision is $NEW_REVISION
+
+      - echo Updating ECS service with new task definition revision...
+      - aws ecs update-service \
           --cluster $CLUSTER_NAME \
           --service $SERVICE_NAME \
+          --task-definition $TASK_FAMILY:$NEW_REVISION \
           --force-new-deployment \
           --region $AWS_DEFAULT_REGION
-      - echo Deployment triggered.
+
+      - echo Deployment complete!
 
 cache:
   paths: []
-
-# No 'artifacts' section, as S3 output/storage artifacts are not needed for this flow.
