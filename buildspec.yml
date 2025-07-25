@@ -5,7 +5,7 @@ phases:
     commands:
       - echo Installing jq and AWS CLI...
       - apt-get update
-      - apt-get install -y jq awscli
+      - DEBIAN_FRONTEND=noninteractive apt-get install -y jq awscli
 
   pre_build:
     commands:
@@ -13,7 +13,7 @@ phases:
       - aws --version
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - IMAGE_TAG=${COMMIT_HASH:-latest}
       - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
       - echo IMAGE_TAG=$IMAGE_TAG
       - echo IMAGE_URI=$IMAGE_URI
@@ -31,9 +31,13 @@ phases:
       - echo Fetching the latest ECS task definition for family: $TASK_DEFINITION_NAME...
       - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
       - echo Updating container image in task definition JSON...
-      - cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
-          .taskDefinition.containerDefinitions[0].image = $IMAGE
-          | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities)
+      - |
+        CONTAINER_NAME=${CONTAINER_NAME:-your-container-name}
+        cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" --arg NAME "$CONTAINER_NAME" '
+          .taskDefinition.containerDefinitions |= map(
+            if .name == $NAME then .image = $IMAGE else . end
+          )
+          | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities, .taskDefinition.registeredAt, .taskDefinition.registeredBy)
           | .taskDefinition
         ' > new-task-def.json
       - echo Registering new ECS task definition revision...
