@@ -6,7 +6,7 @@ phases:
       - echo Installing jq on Ubuntu via apt-get...
       - apt-get update
       - apt-get install -y jq
-      
+
   pre_build:
     commands:
       - echo Logging in to Amazon ECR...
@@ -27,6 +27,34 @@ phases:
     commands:
       - echo Pushing Docker image to ECR...
       - docker push $IMAGE_URI
+
+      - echo Fetching current ECS task definition...
+      - aws ecs describe-task-definition --task-definition $TASK_FAMILY --region $AWS_DEFAULT_REGION > current-task-def.json
+
+      - echo Updating container image in task definition JSON file...
+      - cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
+          .taskDefinition.containerDefinitions[0].image = $IMAGE
+          | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities)
+          | .taskDefinition
+        ' > new-task-def.json
+
+      - echo Displaying updated task definition JSON for debugging...
+      - cat new-task-def.json
+
+      - echo Registering new ECS task definition revision...
+      - REGISTER_OUTPUT=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --region $AWS_DEFAULT_REGION)
+      - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
+      - echo New task definition revision is $NEW_REVISION
+
+      - echo Updating ECS service with new task definition revision...
+      - aws ecs update-service \
+          --cluster $CLUSTER_NAME \
+          --service $SERVICE_NAME \
+          --task-definition $TASK_FAMILY:$NEW_REVISION \
+          --force-new-deployment \
+          --region $AWS_DEFAULT_REGION
+
+      - echo Deployment complete!
 
 cache:
   paths: []
