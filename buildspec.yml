@@ -5,11 +5,13 @@ phases:
     commands:
       - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      
+      - echo Setting IMAGE_TAG and IMAGE_URI...
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
       - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-      - echo IMAGE_TAG=$IMAGE_TAG
-      - echo IMAGE_URI=$IMAGE_URI
+      - echo "IMAGE_TAG=$IMAGE_TAG"
+      - echo "IMAGE_URI=$IMAGE_URI"
 
   build:
     commands:
@@ -21,12 +23,20 @@ phases:
     commands:
       - echo Pushing Docker image to ECR...
       - docker push $IMAGE_URI
-      - echo Preparing ECS task definition...
+
+      - echo Preparing ECS task definition with updated image...
       - sed "s|<IMAGE_URI>|$IMAGE_URI|" task-definition.json > new-task-def.json
+      - echo "Here is the new task definition JSON:"
+      - cat new-task-def.json
+
       - echo Registering ECS task definition...
       - aws ecs register-task-definition --cli-input-json file://new-task-def.json
-      - echo Updating ECS service with new task definition...
+
+      - echo Updating ECS service to use new task definition...
       - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+
+      - echo ECS deployment initiated. Checking current services...
+      - aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME
 
 artifacts:
   files:
