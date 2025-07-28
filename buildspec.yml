@@ -1,78 +1,26 @@
 version: 0.2
 
 phases:
-  install:
-    commands:
-      - echo "Installing jq and AWS CLI..."
-      - apt-get update -y
-      - DEBIAN_FRONTEND=noninteractive apt-get install -y jq awscli
-
   pre_build:
     commands:
-      - echo "===== DEBUGGING ENVIRONMENT VARIABLES ====="
-      - echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION"
-      - echo "AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID"
-      - echo "IMAGE_REPO_NAME=$IMAGE_REPO_NAME"
-      - echo "CLUSTER_NAME=$CLUSTER_NAME"
-      - echo "SERVICE_NAME=$SERVICE_NAME"
-      - echo "TASK_DEFINITION_NAME=$TASK_DEFINITION_NAME"
-
-      # Fetch AWS Account ID if not set
-      - if [ -z "$AWS_ACCOUNT_ID" ]; then
-          echo "AWS_ACCOUNT_ID is empty. Fetching dynamically...";
-          AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text);
-          echo "Fetched AWS_ACCOUNT_ID=$AWS_ACCOUNT_ID";
-        fi
-
-      - echo "Logging in to Amazon ECR..."
-      - aws --version
+      - echo Logging in to Amazon ECR...
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-
-      # Generate commit-based image tag
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - IMAGE_TAG=${COMMIT_HASH:-latest}
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
       - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-      - echo "IMAGE_TAG=$IMAGE_TAG"
-      - echo "IMAGE_URI=$IMAGE_URI"
+      - echo IMAGE_TAG=$IMAGE_TAG
+      - echo IMAGE_URI=$IMAGE_URI
 
   build:
     commands:
-      - echo "===== BUILD PHASE ====="
-      - echo "Building Docker image..."
+      - echo Building Docker image...
       - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
       - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_URI
 
   post_build:
     commands:
-      - echo "===== POST BUILD ====="
-      - echo "Pushing Docker image to ECR..."
+      - echo Pushing Docker image to ECR...
       - docker push $IMAGE_URI
-
-      - echo "Fetching current ECS task definition: $TASK_DEFINITION_NAME"
-      - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
-
-      - echo "Updating container image in task definition..."
-      - jq --arg IMAGE "$IMAGE_URI" '
-          .taskDefinition.containerDefinitions[0].image = $IMAGE
-          | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities, .taskDefinition.registeredAt, .taskDefinition.registeredBy)
-          | .taskDefinition
-        ' current-task-def.json > new-task-def.json
-
-      - echo "Registering new ECS task definition revision..."
-      - REGISTER_OUTPUT=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --region $AWS_DEFAULT_REGION)
-      - echo "REGISTER_OUTPUT=$REGISTER_OUTPUT"
-      - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
-      - echo "New ECS task definition revision is $NEW_REVISION"
-
-      - echo "Updating ECS service with new task definition..."
-      - aws ecs update-service \
-          --cluster $CLUSTER_NAME \
-          --service $SERVICE_NAME \
-          --task-definition $TASK_DEFINITION_NAME:$NEW_REVISION \
-          --force-new-deployment \
-          --region $AWS_DEFAULT_REGION
-
-      - echo "===== DEPLOYMENT COMPLETE ====="
 
 cache:
   paths: []
