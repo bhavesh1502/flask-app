@@ -3,58 +3,65 @@ version: 0.2
 phases:
   install:
     commands:
-      - echo Installing jq on Ubuntu via apt-get...
+      - echo "Installing jq for JSON processing..."
       - apt-get update
       - apt-get install -y jq
 
   pre_build:
     commands:
-      - echo Logging in to Amazon ECR...
+      - echo "Logging in to Amazon ECR..."
+      - aws --version
       - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
       - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
       - IMAGE_TAG=${COMMIT_HASH:=latest}
       - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME:$IMAGE_TAG
-      - echo IMAGE_TAG=$IMAGE_TAG
-      - echo IMAGE_URI=$IMAGE_URI
+      - echo "IMAGE_TAG=$IMAGE_TAG"
+      - echo "IMAGE_URI=$IMAGE_URI"
+      - echo "TASK_DEFINITION_NAME=$TASK_DEFINITION_NAME"
+      - echo "CLUSTER_NAME=$CLUSTER_NAME"
+      - echo "SERVICE_NAME=$SERVICE_NAME"
+      - echo "CONTAINER_NAME=$CONTAINER_NAME"
 
   build:
     commands:
-      - echo Building Docker image...
+      - echo "Building Docker image..."
       - docker build -t $IMAGE_REPO_NAME:$IMAGE_TAG .
       - docker tag $IMAGE_REPO_NAME:$IMAGE_TAG $IMAGE_URI
 
   post_build:
     commands:
-      - echo Pushing Docker image to ECR...
+      - echo "Pushing Docker image to ECR..."
       - docker push $IMAGE_URI
 
-      - echo Fetching current ECS task definition...
-      - aws ecs describe-task-definition --task-definition $TASK_FAMILY --region $AWS_DEFAULT_REGION > current-task-def.json
+      - echo "Fetching current ECS task definition..."
+      - aws ecs describe-task-definition --task-definition $TASK_DEFINITION_NAME --region $AWS_DEFAULT_REGION > current-task-def.json
 
-      - echo Updating container image in task definition JSON file...
-      - cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
-          .taskDefinition.containerDefinitions[0].image = $IMAGE
+      - echo "Updating container image in task definition using jq..."
+      - |
+        cat current-task-def.json | jq --arg IMAGE "$IMAGE_URI" '
+          .taskDefinition.containerDefinitions
+            |= map(if .name == env.CONTAINER_NAME then .image = $IMAGE else . end)
           | del(.taskDefinition.taskDefinitionArn, .taskDefinition.revision, .taskDefinition.status, .taskDefinition.requiresAttributes, .taskDefinition.compatibilities)
           | .taskDefinition
         ' > new-task-def.json
 
-      - echo Displaying updated task definition JSON for debugging...
+      - echo "New ECS task definition (for debugging):"
       - cat new-task-def.json
 
-      - echo Registering new ECS task definition revision...
+      - echo "Registering new ECS task definition revision..."
       - REGISTER_OUTPUT=$(aws ecs register-task-definition --cli-input-json file://new-task-def.json --region $AWS_DEFAULT_REGION)
       - NEW_REVISION=$(echo $REGISTER_OUTPUT | jq '.taskDefinition.revision')
-      - echo New task definition revision is $NEW_REVISION
+      - echo "New task definition revision: $NEW_REVISION"
 
-      - echo Updating ECS service with new task definition revision...
+      - echo "Updating ECS service to use new task definition revision..."
       - aws ecs update-service \
           --cluster $CLUSTER_NAME \
           --service $SERVICE_NAME \
-          --task-definition $TASK_FAMILY:$NEW_REVISION \
+          --task-definition $TASK_DEFINITION_NAME:$NEW_REVISION \
           --force-new-deployment \
           --region $AWS_DEFAULT_REGION
 
-      - echo Deployment complete!
+      - echo "Deployment complete!"
 
 cache:
   paths: []
