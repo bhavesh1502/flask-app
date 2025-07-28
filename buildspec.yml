@@ -33,7 +33,7 @@ phases:
       - aws ecs register-task-definition --cli-input-json file://new-task-def.json
 
       - echo Updating ECS service to use new task definition...
-      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME --force-new-deployment
+      - aws ecs update-service --cluster $CLUSTER_NAME --service $SERVICE_NAME $REGION --task-definition $TASK_DEFINITION_NAME --force-new-deployment
 
       - echo ECS deployment initiated. Checking current services...
       - aws ecs describe-services --cluster $CLUSTER_NAME --services $SERVICE_NAME
